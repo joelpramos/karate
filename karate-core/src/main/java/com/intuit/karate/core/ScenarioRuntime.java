@@ -29,7 +29,6 @@ import com.intuit.karate.LogAppender;
 import com.intuit.karate.Logger;
 import com.intuit.karate.RuntimeHook;
 import com.intuit.karate.ScenarioActions;
-import com.intuit.karate.Suite;
 import com.intuit.karate.debug.DebugThread;
 import com.intuit.karate.http.ResourceType;
 import com.intuit.karate.shell.StringLogAppender;
@@ -169,6 +168,7 @@ public class ScenarioRuntime implements Runnable {
     private StepResult currentStepResult;
     private Step currentStep;
     private Throwable error;
+    private Integer errorStepIndex;
     private boolean configFailed;
     private boolean stopped;
     private boolean aborted;
@@ -192,6 +192,10 @@ public class ScenarioRuntime implements Runnable {
 
     public void stepProceed() {
         stopped = false;
+    }
+
+    public int getStepIndex() {
+        return stepIndex;
     }
 
     private int nextStepIndex() {
@@ -224,6 +228,23 @@ public class ScenarioRuntime implements Runnable {
                     oldStep.parseAndUpdateFrom(newStep.getText());
                     logger.info("hot reloaded line: {} - {}", newStep.getLine(), newStep.getText());
                     success = true;
+
+                    if (this.error != null && this.errorStepIndex == oldStep.getIndex() && this.currentStep.getIndex() <= this.errorStepIndex) {
+                        // if the error happened on a line that is being reloaded
+                        // and debugger is on that step or before that
+                        // reset Runtime error
+
+                        if ((this.stepIndex - 1) == this.errorStepIndex) {
+                            // if on the exact same step, reset the step
+                            // -1 because the index is increased after execution
+                            // but debugger is stopped on the line with the error
+                            this.stepReset();
+                        }
+                        this.error = null;
+                        this.errorStepIndex = null;
+                        this.stopped = false;
+                        this.engine.setFailedReason(null);
+                    }
                 } catch (Exception e) {
                     logger.warn("failed to hot reload step: {}", e.getMessage());
                 }
@@ -477,6 +498,7 @@ public class ScenarioRuntime implements Runnable {
 
             if (stopped && (!this.engine.getConfig().isContinueAfterContinueOnStepFailure() || !this.engine.isIgnoringStepErrors())) {
                 error = stepResult.getError();
+                errorStepIndex = step.getIndex();
                 logError(error.getMessage());
             }
         } else {

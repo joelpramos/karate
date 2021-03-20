@@ -356,12 +356,31 @@ public class DapServerHandler extends SimpleChannelInboundHandler<DapMessage> im
                 break;
             case "restart":
                 ScenarioRuntime context = FRAMES.get(focusedFrameId);
+                boolean stepIndexChanged = false;
+                int stepIndexBeforeReload = context == null ? -1 : context.getStepIndex();
                 if (context != null && context.hotReload()) {
                     output("[debug] hot reload successful");
+                    if (context.getStepIndex() != stepIndexBeforeReload) {
+                        stepIndexChanged = true;
+                    }
                 } else {
                     output("[debug] hot reload requested, but no steps edited");
                 }
                 ctx.write(response(req));
+
+                //if (stepIndexChanged) {
+
+                    DebugThread thread = (DebugThread) context.featureRuntime.suite.hooks.stream()
+                            .filter(DebugThread.class::isInstance).findFirst().orElse(null);
+                    if (thread != null) {
+                        //thread.resume();
+                        synchronized (thread) {
+                            thread.notify();
+                        }
+                        thread.pause();
+                    }
+                //}
+
                 break;
             case "disconnect":
                 boolean restart = req.getArgument("restart", Boolean.class);
